@@ -1,0 +1,8 @@
+[package]
+name = "anidb_titles"
+version = "0.1.0"
+authors = ["Walfie <walfington@gmail.com>"]
+
+[dependencies]
+error-chain = "0.9"
+tantivy = "0.2"
