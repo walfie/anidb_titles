@@ -5,3 +5,4 @@ authors = ["Walfie <walfington@gmail.com>"]
 
 [dependencies]
 error-chain = "0.9"
+csv = "0.15"
