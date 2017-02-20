@@ -4,9 +4,11 @@ extern crate error_chain;
 extern crate csv;
 
 pub mod error;
+use csv::NextField;
 pub use error::*;
-
 use std::collections::{HashMap, HashSet};
+
+use std::collections::hash_map::Entry;
 use std::fs::File;
 use std::io::{BufReader, BufRead};
 use std::path::Path;
@@ -32,6 +34,11 @@ impl TitleType {
     }
 }
 
+pub struct Series {
+    pub id: u32,
+    pub title: String,
+}
+
 #[derive(Debug, PartialEq)]
 pub struct Title {
     pub id: u32,
@@ -40,7 +47,7 @@ pub struct Title {
     pub title: String,
 }
 
-pub fn process_file<P>(file_path: P, languages: &[&str]) -> Result<HashMap<u32, Vec<Title>>>
+pub fn parse_file<P>(file_path: P, languages: &[&str]) -> Result<HashMap<u32, Vec<Title>>>
     where P: AsRef<Path>
 {
     let file = File::open(file_path.as_ref())?;
@@ -62,14 +69,13 @@ pub fn process_file<P>(file_path: P, languages: &[&str]) -> Result<HashMap<u32, 
 
     let mut reader = csv::Reader::from_reader(reader)
         .delimiter(b'|')
+        .double_quote(false)
         .flexible(true) // For titles that contain the delimiter '|' in them
         .record_terminator(csv::RecordTerminator::Any(b'\n'));
 
     let mut titles_hash_map: HashMap<u32, Vec<Title>> = HashMap::new();
 
     loop {
-        use csv::NextField;
-
         let id: u32 = match reader.next_str() {
             NextField::Data(s) => {
                 s.parse::<u32>()
@@ -122,7 +128,6 @@ pub fn process_file<P>(file_path: P, languages: &[&str]) -> Result<HashMap<u32, 
                 title: title,
             };
 
-            use std::collections::hash_map::Entry;
             match titles_hash_map.entry(id) {
                 Entry::Occupied(mut o) => {
                     o.get_mut().push(new_title);

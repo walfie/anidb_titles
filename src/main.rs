@@ -33,11 +33,14 @@ fn main() {
 }
 
 fn run(path: &str) -> Result<()> {
-    let hashmap = titles::process_file(path, &["ja", "en", "x-jat"])?;
+    let hashmap = titles::parse_file(path, &["ja", "en", "x-jat"])?;
     for (id, titles) in &hashmap {
         println!("{}", id);
         for title in titles {
-            println!("    {} ({})", title.title, title.language);
+            println!("    {} ({} {:?})",
+                     title.title,
+                     title.language,
+                     title.title_type);
         }
     }
     Ok(())
