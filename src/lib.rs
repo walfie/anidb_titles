@@ -2,6 +2,10 @@
 #[macro_use]
 extern crate error_chain;
 extern crate csv;
+#[macro_use]
+extern crate serde_derive;
+extern crate serde;
+extern crate serde_json;
 
 pub mod error;
 use csv::NextField;
@@ -10,13 +14,15 @@ use std::collections::HashSet;
 use std::fs::File;
 use std::io::{BufReader, BufRead};
 use std::path::Path;
+pub mod elastic;
 
-#[derive(Debug, PartialEq)]
+// Sorted by lowest priority to highest
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum TitleType {
-    Primary,
-    Official,
-    Synonym,
     Short,
+    Synonym,
+    Official,
+    Primary,
 }
 
 impl TitleType {
@@ -50,7 +56,7 @@ impl<'a> TitleIterator<'a> {
     pub fn new<P>(file_path: P, languages: &[&'a str]) -> Result<TitleIterator<'a>>
         where P: 'a + AsRef<Path>
     {
-        let file = File::open(file_path.as_ref())?;
+        let file = File::open(file_path)?;
         let mut reader = BufReader::new(file);
 
         let mut language_set = HashSet::new();
@@ -126,7 +132,10 @@ impl<'a> Iterator for TitleIterator<'a> {
 
         if let Some(language) = language_opt {
             let mut title = match self.reader.next_str() {
-                NextField::Data(s) => s.to_string(),
+                NextField::Data(s) => {
+                    // This slows things down by a lot
+                    s.replace("&lt;", "<").replace("&gt;", ">")
+                }
                 _ => return fail_parse(self.line_num),
             };
 

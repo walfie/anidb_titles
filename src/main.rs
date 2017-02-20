@@ -1,5 +1,7 @@
 extern crate anidb_titles as titles;
+extern crate serde_json;
 
+use titles::elastic;
 use titles::error::*;
 
 fn main() {
@@ -8,8 +10,6 @@ fn main() {
         Some(path) => path,
         _ => panic!("Invalid args"),
     };
-
-    println!("{}", path);
 
     if let Err(e) = run(&path) {
         use std::io::Write;
@@ -54,14 +54,16 @@ fn run(path: &str) -> Result<()> {
         };
     }
 
-    for (id, titles) in titles_hash_map {
-        println!("{}", id);
-        for title in titles {
-            println!("    {} ({} {:?})",
-                     title.title,
-                     title.language,
-                     title.title_type);
+    let series = titles_hash_map.drain().map(|(id, titles)| {
+        elastic::Series {
+            id: id,
+            titles: elastic::TitlesByLanguage::new(titles),
         }
+    });
+
+    for s in series {
+        println!("{}\n", serde_json::to_string_pretty(&s).unwrap());
     }
+
     Ok(())
 }

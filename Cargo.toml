@@ -6,4 +6,11 @@ authors = ["Walfie <walfington@gmail.com>"]
 [dependencies]
 error-chain = "0.9"
 csv = "0.15"
+serde = { version = "0.9", optional = true }
+serde_derive = { version = "0.9", optional = true }
+serde_json = { version = "0.9", optional = true }
+
+[features]
+default = ["elastic"]
+elastic = ["serde", "serde_derive", "serde_json"]
 
