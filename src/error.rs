@@ -14,9 +14,9 @@ error_chain! {
             description("failed to parse input line")
             display("failed to parse input line: {}", line)
         }
-        InvalidParse(path: String, line_number: u32) {
+        InvalidParse(line_number: u32) {
             description("failed to parse line from file")
-            display("failed to parse line {} in file {}", line_number, path)
+            display("failed to parse line {}", line_number)
         }
     }
 

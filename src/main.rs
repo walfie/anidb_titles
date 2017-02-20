@@ -33,8 +33,28 @@ fn main() {
 }
 
 fn run(path: &str) -> Result<()> {
-    let hashmap = titles::parse_file(path, &["ja", "en", "x-jat"])?;
-    for (id, titles) in &hashmap {
+    let titles_iter = titles::TitleIterator::new(path, &["ja", "en", "x-jat"])?;
+
+    use std::collections::HashMap;
+    use std::collections::hash_map::Entry;
+    use titles::Title;
+
+    let mut titles_hash_map: HashMap<u32, Vec<Title>> = HashMap::new();
+
+    for title_result in titles_iter {
+        let title = title_result?;
+
+        match titles_hash_map.entry(title.id) {
+            Entry::Occupied(mut o) => {
+                o.get_mut().push(title);
+            }
+            Entry::Vacant(v) => {
+                v.insert(vec![title]);
+            }
+        };
+    }
+
+    for (id, titles) in titles_hash_map {
         println!("{}", id);
         for title in titles {
             println!("    {} ({} {:?})",
