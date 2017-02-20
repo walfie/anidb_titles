@@ -1,66 +1,127 @@
 #![recursion_limit = "1024"]
 #[macro_use]
 extern crate error_chain;
-extern crate tantivy;
 
 pub mod error;
-pub use error::{Error, Result};
+pub use error::*;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufReader, BufRead};
+use std::path::Path;
 
-use tantivy::Index;
-
-pub fn index() -> Result<Index> {
-    use tantivy::schema::*;
-
-    let mut schema_builder = SchemaBuilder::default();
-    schema_builder.add_text_field("title", TEXT | STORED);
-
-    let id_options = U32Options::default().set_stored().set_indexed();
-    schema_builder.add_u32_field("id", id_options);
-
-    let schema = schema_builder.build();
-
-    // TODO: Don't create in ram
-    Ok(Index::create_in_ram(schema))
+#[derive(Debug, PartialEq)]
+pub enum TitleType {
+    Primary,
+    Synonym,
+    Short,
+    Official,
 }
 
-// TODO: Stop using `unwrap()`
-pub fn process_file(file_path: &str, languages: &[&str], index: Index) -> Result<Index> {
-    use tantivy::Document;
-
-    let mut index_writer = index.writer(100_000_000).unwrap(); // Preserve 100MB. TODO: Don't unwrap
-    let schema = index.schema();
-
-    let id_field = schema.get_field("id").unwrap();
-    let title_field = schema.get_field("title").unwrap();
-
-    let mut hash = HashSet::new();
-    for language in languages.iter() {
-        hash.insert(language);
+impl TitleType {
+    fn from_id(id: &str) -> Result<Self> {
+        use TitleType::*;
+        match id {
+            "1" => Ok(Primary),
+            "2" => Ok(Synonym),
+            "3" => Ok(Short),
+            "4" => Ok(Official),
+            _ => Err(ErrorKind::InvalidTitleType(id.to_string()).into()),
+        }
     }
+}
 
-    let f = File::open(file_path)?;
-    let file = BufReader::new(&f);
+#[derive(Debug, PartialEq)]
+pub struct Title {
+    pub id: u32,
+    pub title_type: TitleType,
+    pub language: String,
+    pub title: String,
+}
 
-    for line in file.lines().flat_map(|l| l.ok()).skip_while(|l| l.starts_with('#')) {
+impl Title {
+    fn from_line(line: &str) -> Result<Self> {
         let mut parts = line.split('|');
 
-        if let (Some(id), Some(title_type), Some(lang), Some(title)) =
+        if let (Some(id), Some(title_type), Some(language), Some(title)) =
             (parts.next(), parts.next(), parts.next(), parts.next()) {
-            if hash.contains(&lang) {
-                let mut doc = Document::default();
-                doc.add_u32(id_field, id.parse::<u32>().unwrap()); // TODO: Don't unwrap
-                doc.add_text(title_field, title);
-                index_writer.add_document(doc); // Ignore error
-                // println!("{} {} {} {}", id, title_type, lang, title);
-            }
+            let id = id.parse::<u32>().map_err(|_| ErrorKind::InvalidId(id.to_string()))?;
+            let title_type = TitleType::from_id(title_type)?;
+            Ok(Title {
+                id: id,
+                title_type: title_type,
+                language: language.into(),
+                title: title.into(),
+            })
+        } else {
+            Err(ErrorKind::InvalidLine(line.to_string()).into())
+        }
+    }
+}
+
+pub fn process_lines<I>(lines: I, languages: &[&str]) -> Result<HashMap<u32, Vec<Title>>>
+    where I: Iterator<Item = String>
+{
+    let mut set = HashSet::new();
+    for language in languages.iter() {
+        set.insert(language.to_string());
+    }
+
+    let mut titles: HashMap<u32, Vec<Title>> = HashMap::new();
+
+    let iter = lines.skip_while(|l| l.starts_with('#'));
+
+    for line in iter {
+        let title = Title::from_line(&line)?;
+
+        use std::collections::hash_map::Entry;
+
+        if set.contains(&title.language) {
+            match titles.entry(title.id) {
+                Entry::Occupied(mut o) => {
+                    o.get_mut().push(title);
+                }
+                Entry::Vacant(v) => {
+                    v.insert(vec![title]);
+                }
+            };
         }
     }
 
-    index_writer.commit();
+    Ok(titles)
+}
 
-    Ok(index)
+pub fn process_file<P>(file_path: P, languages: &[&str]) -> Result<HashMap<u32, Vec<Title>>>
+    where P: AsRef<Path>
+{
+    let f = File::open(file_path)?;
+    let file = BufReader::new(&f);
+
+    process_lines(file.lines().flat_map(|l| l.ok()), languages)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn from_line() {
+        assert_eq!(Title::from_line("9348|2|en|Aikatsu! Idol Activities!").ok(),
+                   Some(Title {
+                       id: 9348,
+                       title_type: TitleType::Synonym,
+                       language: "en",
+                       title: "Aikatsu! Idol Activities!",
+                   }));
+
+        assert_eq!(Title::from_line("9348|4|ja|アイカツ! アイドルカツドウ!").ok(),
+                   Some(Title {
+                       id: 9348,
+                       title_type: TitleType::Official,
+                       language: "ja",
+                       title: "アイカツ! アイドルカツドウ!",
+                   }));
+
+        assert!(Title::from_line("1234|5|ja|5 is an invalid title type").is_err());
+        assert!(Title::from_line("1234|4|this doesn't have enough columns").is_err());
+    }
 }

@@ -1,18 +1,17 @@
 extern crate anidb_titles as titles;
-extern crate tantivy;
 
 use titles::error::*;
 
 fn main() {
     let mut args = std::env::args().skip(1);
-    let (path, search_term) = match (args.next(), args.next()) {
-        (Some(path), Some(search_term)) => (path, search_term),
+    let path = match args.next() {
+        Some(path) => path,
         _ => panic!("Invalid args"),
     };
 
-    println!("{} {}", path, search_term);
+    println!("{}", path);
 
-    if let Err(e) = run(&path, &search_term) {
+    if let Err(e) = run(&path) {
         use std::io::Write;
 
         let stderr = &mut std::io::stderr();
@@ -33,31 +32,13 @@ fn main() {
     }
 }
 
-fn run(path: &str, search_term: &str) -> Result<()> {
-    use tantivy::query::QueryParser;
-    use tantivy::collector::TopCollector;
-
-    let index = titles::index().unwrap();
-    let index = titles::process_file(path, &["ja", "en", "x-jat"], index).unwrap();
-
-    let schema = index.schema();
-    let id_field = schema.get_field("id").unwrap();
-    let title_field = schema.get_field("title").unwrap();
-    let query_parser = QueryParser::new(index.schema(), vec![title_field]);
-
-    let query = query_parser.parse_query(search_term).unwrap();
-
-    let mut top_collector = TopCollector::with_limit(10);
-
-    let searcher = index.searcher();
-    query.search(&searcher, &mut top_collector);
-
-    let doc_addresses = top_collector.docs();
-    for doc_address in doc_addresses {
-        println!("{:?}", doc_address);
-        let retrieved_doc = searcher.doc(&doc_address).unwrap();
-        println!("{}", schema.to_json(&retrieved_doc));
+fn run(path: &str) -> Result<()> {
+    let hashmap = titles::process_file(path, &["ja", "en", "x-jat"])?;
+    for (id, titles) in &hashmap {
+        println!("{}", id);
+        for title in titles {
+            println!("    {} ({})", title.title, title.language);
+        }
     }
-
     Ok(())
 }
