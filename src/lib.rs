@@ -154,29 +154,3 @@ fn fail_parse<P, T>(file_path: P, line_num: u32) -> Result<T>
     let path_str = file_path.as_ref().to_string_lossy().into();
     Err(ErrorKind::InvalidParse(path_str, line_num).into())
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn from_line() {
-        assert_eq!(Title::from_line("9348|2|en|Aikatsu! Idol Activities!").ok(),
-                   Some(Title {
-                       id: 9348,
-                       title_type: TitleType::Synonym,
-                       language: "en",
-                       title: "Aikatsu! Idol Activities!",
-                   }));
-
-        assert_eq!(Title::from_line("9348|4|ja|アイカツ! アイドルカツドウ!").ok(),
-                   Some(Title {
-                       id: 9348,
-                       title_type: TitleType::Official,
-                       language: "ja",
-                       title: "アイカツ! アイドルカツドウ!",
-                   }));
-
-        assert!(Title::from_line("1234|5|ja|5 is an invalid title type").is_err());
-        assert!(Title::from_line("1234|4|this doesn't have enough columns").is_err());
-    }
-}
