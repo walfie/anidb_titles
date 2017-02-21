@@ -1,3 +1,5 @@
+use reqwest;
+use serde_json;
 use std;
 
 error_chain! {
@@ -10,17 +12,23 @@ error_chain! {
             description("invalid title type")
             display("found unexpected title type: {}", title_type)
         }
-        InvalidLine(line: String) {
-            description("failed to parse input line")
-            display("failed to parse input line: {}", line)
-        }
         InvalidParse(line_number: u32) {
             description("failed to parse line from file")
             display("failed to parse line {}", line_number)
+        }
+        InvalidUrl(url: String) {
+            description("failed to parse URL")
+            display("failed to parse URL {}", url)
+        }
+        UnexpectedResponse(url: String, resp: String) {
+            description("unexpected response")
+            display("unexpected response for {}\n{}", url, resp)
         }
     }
 
     foreign_links {
         Io(std::io::Error);
+        Http(reqwest::Error);
+        Json(serde_json::Error);
     }
 }

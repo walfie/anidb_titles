@@ -6,11 +6,15 @@ authors = ["Walfie <walfington@gmail.com>"]
 [dependencies]
 error-chain = "0.9"
 csv = "0.15"
+time = { version = "0.1", optional = true }
 serde = { version = "0.9", optional = true }
 serde_derive = { version = "0.9", optional = true }
 serde_json = { version = "0.9", optional = true }
+reqwest = { version = "0.4", optional = true }
+itertools = { version = "0.5", optional = true }
 
 [features]
-default = ["elastic"]
-elastic = ["serde", "serde_derive", "serde_json"]
+default = ["elasticsearch"]
+elasticsearch = ["serde", "serde_derive", "serde_json", "reqwest", "time", "itertools"]
+
 

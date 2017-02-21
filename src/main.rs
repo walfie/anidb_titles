@@ -61,9 +61,7 @@ fn run(path: &str) -> Result<()> {
         }
     });
 
-    for s in series {
-        println!("{}\n", serde_json::to_string_pretty(&s).unwrap());
-    }
-
-    Ok(())
+    let url = "http://localhost:9200";
+    let client = elastic::Client::new(url, "series")?;
+    client.reindex(series)
 }
