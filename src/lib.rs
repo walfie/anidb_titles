@@ -14,7 +14,6 @@ extern crate itertools;
 pub mod error;
 use csv::NextField;
 pub use error::*;
-use std::collections::HashSet;
 use std::fs::File;
 use std::io::{BufReader, BufRead};
 use std::path::Path;
@@ -51,28 +50,17 @@ pub struct Title {
     pub title: String,
 }
 
-pub struct TitleIterator<'a> {
+pub struct TitleIterator {
     reader: csv::Reader<File>,
     line_num: u32,
-    languages: Option<HashSet<&'a str>>,
 }
 
-impl<'a> TitleIterator<'a> {
-    pub fn new<P>(file_path: P, languages: Option<&[&'a str]>) -> Result<TitleIterator<'a>>
-        where P: 'a + AsRef<Path>
+impl TitleIterator {
+    pub fn new<P>(file_path: P) -> Result<TitleIterator>
+        where P: AsRef<Path>
     {
         let file = File::open(file_path)?;
         let mut reader = BufReader::new(file);
-
-        let language_set = if let Some(languages) = languages {
-            let mut language_set = HashSet::new();
-            for language in languages.iter() {
-                language_set.insert(*language);
-            }
-            Some(language_set)
-        } else {
-            None
-        };
 
         // Ignore first 3 lines, which are comments
         {
@@ -92,7 +80,6 @@ impl<'a> TitleIterator<'a> {
         Ok(TitleIterator {
             reader: csv_reader,
             line_num: line_num,
-            languages: language_set,
         })
     }
 }
@@ -101,7 +88,7 @@ fn fail_parse<T>(line_num: u32) -> Option<Result<T>> {
     Some(Err(ErrorKind::InvalidParse(line_num).into()))
 }
 
-impl<'a> Iterator for TitleIterator<'a> {
+impl Iterator for TitleIterator {
     type Item = Result<Title>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -129,61 +116,40 @@ impl<'a> Iterator for TitleIterator<'a> {
             _ => return fail_parse(self.line_num),
         };
 
-        let language_opt = match self.reader.next_str() {
+        let language = match self.reader.next_str() {
+            NextField::Data(s) => s.to_string(),
+            _ => return fail_parse(self.line_num),
+        };
+
+        let mut title = match self.reader.next_str() {
             NextField::Data(s) => {
-                // If not filtering by language, include all titles
-                match self.languages {
-                    Some(ref l) if !l.contains(s) => None,
-                    _ => Some(s.to_string()),
-                }
+                // This string replace slows things down a lot
+                s.replace("&lt;", "<").replace("&gt;", ">")
             }
             _ => return fail_parse(self.line_num),
         };
 
-        if let Some(language) = language_opt {
-            let mut title = match self.reader.next_str() {
+        loop {
+            match self.reader.next_str() {
+                NextField::EndOfRecord => break,
+
+                // "Shin Evangelion Gekijouban:||" has "||" at the end, heck
                 NextField::Data(s) => {
-                    // This slows things down by a lot
-                    s.replace("&lt;", "<").replace("&gt;", ">")
+                    title.push('|');
+                    title.push_str(s);
                 }
+
                 _ => return fail_parse(self.line_num),
-            };
-
-            loop {
-                match self.reader.next_str() {
-                    NextField::EndOfRecord => break,
-
-                    // "Shin Evangelion Gekijouban:||" has "||" at the end, heck
-                    NextField::Data(s) => {
-                        title.push('|');
-                        title.push_str(s);
-                    }
-
-                    _ => return fail_parse(self.line_num),
-                }
             }
-
-            self.line_num += 1;
-
-            return Some(Ok(Title {
-                id: id,
-                title_type: title_type,
-                language: language,
-                title: title,
-            }));
-        } else {
-            // Language doesn't match, so ignore the rest of this row
-            loop {
-                match self.reader.next_str() {
-                    NextField::EndOfRecord => break,
-                    NextField::Data(_) => continue,
-                    _ => return fail_parse(self.line_num),
-                }
-            }
-
-            self.line_num += 1;
-
-            return self.next();
         }
+
+        self.line_num += 1;
+
+        Some(Ok(Title {
+            id: id,
+            title_type: title_type,
+            language: language,
+            title: title,
+        }))
     }
 }
