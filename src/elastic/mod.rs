@@ -13,32 +13,29 @@ pub struct Series {
 }
 
 #[derive(Debug, Serialize)]
-pub struct TitlesByLanguage {
-    pub x_jat: Vec<String>,
-    pub ja: Vec<String>,
-    pub en: Vec<String>,
-}
+pub struct TitlesByLanguage(JsValue);
 
 impl TitlesByLanguage {
     pub fn new(mut titles: Vec<Title>) -> Self {
-        let mut by_language = TitlesByLanguage {
-            x_jat: vec![],
-            ja: vec![],
-            en: vec![],
-        };
+        use serde_json::Value::{Array, String};
+        use serde_json::map::{Map, Entry};
+
+        let mut by_language = Map::new();
 
         titles.sort_by_key(|t| t.title_type as i8);
 
         while let Some(title) = titles.pop() {
-            match title.language.as_ref() {
-                "x-jat" => by_language.x_jat.push(title.title),
-                "ja" => by_language.ja.push(title.title),
-                "en" => by_language.en.push(title.title),
-                _ => (),
+            match by_language.entry(title.language) {
+                Entry::Occupied(mut o) => {
+                    o.get_mut().as_array_mut().unwrap().push(String(title.title));
+                }
+                Entry::Vacant(v) => {
+                    v.insert(Array(vec![String(title.title)]));
+                }
             }
         }
 
-        by_language
+        TitlesByLanguage(JsValue::Object(by_language))
     }
 }
 
@@ -200,18 +197,9 @@ fn mappings() -> serde_json::Value {
                 "properties": {
                     "titles": {
                         "properties": {
-                            "x_jat": {
-                                "type": "string",
-                                "analyzer": "standard"
-                            },
-                            "ja": {
-                                "type": "string",
-                                "analyzer": "cjk"
-                            },
-                            "en": {
-                                "type": "string",
-                                "analyzer": "english"
-                            }
+                            "x_jat": { "analyzer": "standard" },
+                            "ja": { "analyzer": "cjk" },
+                            "en": { "analyzer": "english" }
                         }
                     }
                 }

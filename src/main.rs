@@ -33,7 +33,7 @@ fn main() {
 }
 
 fn run(path: &str, url: &str) -> Result<()> {
-    let titles_iter = titles::TitleIterator::new(path, &["ja", "en", "x-jat"])?;
+    let titles_iter = titles::TitleIterator::new(path, None)?;
 
     use std::collections::HashMap;
     use std::collections::hash_map::Entry;

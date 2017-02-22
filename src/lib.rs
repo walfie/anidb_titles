@@ -54,20 +54,25 @@ pub struct Title {
 pub struct TitleIterator<'a> {
     reader: csv::Reader<File>,
     line_num: u32,
-    languages: HashSet<&'a str>,
+    languages: Option<HashSet<&'a str>>,
 }
 
 impl<'a> TitleIterator<'a> {
-    pub fn new<P>(file_path: P, languages: &[&'a str]) -> Result<TitleIterator<'a>>
+    pub fn new<P>(file_path: P, languages: Option<&[&'a str]>) -> Result<TitleIterator<'a>>
         where P: 'a + AsRef<Path>
     {
         let file = File::open(file_path)?;
         let mut reader = BufReader::new(file);
 
-        let mut language_set = HashSet::new();
-        for language in languages.iter() {
-            language_set.insert(*language);
-        }
+        let language_set = if let Some(languages) = languages {
+            let mut language_set = HashSet::new();
+            for language in languages.iter() {
+                language_set.insert(*language);
+            }
+            Some(language_set)
+        } else {
+            None
+        };
 
         // Ignore first 3 lines, which are comments
         {
@@ -126,10 +131,10 @@ impl<'a> Iterator for TitleIterator<'a> {
 
         let language_opt = match self.reader.next_str() {
             NextField::Data(s) => {
-                if self.languages.contains(s) {
-                    Some(s.to_string())
-                } else {
-                    None
+                // If not filtering by language, include all titles
+                match self.languages {
+                    Some(ref l) if !l.contains(s) => None,
+                    _ => Some(s.to_string()),
                 }
             }
             _ => return fail_parse(self.line_num),
