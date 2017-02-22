@@ -22,11 +22,12 @@ pub mod elastic;
 
 // Sorted by lowest priority to highest
 #[derive(Debug, PartialEq, Clone, Copy)]
+#[repr(u8)]
 pub enum TitleType {
-    Short,
-    Synonym,
-    Official,
-    Primary,
+    Short = 0,
+    Synonym = 1,
+    Official = 2,
+    Primary = 3,
 }
 
 impl TitleType {

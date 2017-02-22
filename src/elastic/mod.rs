@@ -199,7 +199,6 @@ fn mappings() -> serde_json::Value {
                 "_all": { "enabled": false },
                 "properties": {
                     "titles": {
-                        "type": "nested",
                         "properties": {
                             "x_jat": {
                                 "type": "string",

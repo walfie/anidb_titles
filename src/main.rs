@@ -6,12 +6,12 @@ use titles::error::*;
 
 fn main() {
     let mut args = std::env::args().skip(1);
-    let path = match args.next() {
-        Some(path) => path,
+    let (path, url) = match (args.next(), args.next()) {
+        (Some(path), Some(url)) => (path, url),
         _ => panic!("Invalid args"),
     };
 
-    if let Err(e) = run(&path) {
+    if let Err(e) = run(&path, &url) {
         use std::io::Write;
 
         let stderr = &mut std::io::stderr();
@@ -32,7 +32,7 @@ fn main() {
     }
 }
 
-fn run(path: &str) -> Result<()> {
+fn run(path: &str, url: &str) -> Result<()> {
     let titles_iter = titles::TitleIterator::new(path, &["ja", "en", "x-jat"])?;
 
     use std::collections::HashMap;
@@ -61,7 +61,6 @@ fn run(path: &str) -> Result<()> {
         }
     });
 
-    let url = "http://localhost:9200";
     let client = elastic::Client::new(url, "series")?;
     client.reindex(series)
 }
