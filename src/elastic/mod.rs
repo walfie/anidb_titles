@@ -4,7 +4,10 @@ use itertools::Itertools;
 use reqwest;
 use serde_json;
 use serde_json::Value as JsValue;
+use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use time;
+
 
 #[derive(Debug, Serialize)]
 pub struct Series {
@@ -13,29 +16,26 @@ pub struct Series {
 }
 
 #[derive(Debug, Serialize)]
-pub struct TitlesByLanguage(JsValue);
+pub struct TitlesByLanguage(HashMap<String, Vec<String>>);
 
 impl TitlesByLanguage {
     pub fn new(mut titles: Vec<Title>) -> Self {
-        use serde_json::Value::{Array, String};
-        use serde_json::map::{Map, Entry};
-
-        let mut by_language = Map::new();
+        let mut by_language: HashMap<String, Vec<String>> = HashMap::new();
 
         titles.sort_by_key(|t| t.title_type as i8);
 
         while let Some(title) = titles.pop() {
             match by_language.entry(title.language) {
                 Entry::Occupied(mut o) => {
-                    o.get_mut().as_array_mut().unwrap().push(String(title.title));
+                    o.get_mut().push(title.title);
                 }
                 Entry::Vacant(v) => {
-                    v.insert(Array(vec![String(title.title)]));
+                    v.insert(vec![title.title]);
                 }
             }
         }
 
-        TitlesByLanguage(JsValue::Object(by_language))
+        TitlesByLanguage(by_language)
     }
 }
 
