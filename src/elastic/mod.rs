@@ -197,9 +197,18 @@ fn mappings() -> serde_json::Value {
                 "properties": {
                     "titles": {
                         "properties": {
-                            "x_jat": { "analyzer": "standard" },
-                            "ja": { "analyzer": "cjk" },
-                            "en": { "analyzer": "english" }
+                            "x_jat": {
+                                "type": "string",
+                                "analyzer": "standard"
+                            },
+                            "ja": {
+                                "type": "string",
+                                "analyzer": "cjk"
+                            },
+                            "en": {
+                                "type": "string",
+                                "analyzer": "english"
+                            }
                         }
                     }
                 }
