@@ -2,6 +2,7 @@ use Title;
 use error::*;
 use itertools::Itertools;
 use reqwest;
+use reqwest::Method;
 use serde_json;
 use serde_json::Value as JsValue;
 use std::collections::HashMap;
@@ -9,13 +10,13 @@ use std::collections::hash_map::Entry;
 use time;
 
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Series {
     pub id: u32,
     pub titles: TitlesByLanguage,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct TitlesByLanguage(HashMap<String, Vec<String>>);
 
 impl TitlesByLanguage {
@@ -87,7 +88,7 @@ impl<'a> Client<'a> {
         });
 
         let json = serde_json::to_string(&body)?;
-        self.do_request(reqwest::Method::Post, "_aliases", Some(&json)).map(|_| ())
+        self.do_request(Method::Post, "_aliases", Some(&json)).map(|_| ())
     }
 
     fn bulk_insert<I>(&self,
@@ -122,13 +123,13 @@ impl<'a> Client<'a> {
 
                 batch.push('\n');
 
-                self.do_request(reqwest::Method::Put, "_bulk", Some(&batch)).map(|_| ())
+                self.do_request(Method::Put, "_bulk", Some(&batch)).map(|_| ())
             })
             .fold_results((), |_, _| ())
     }
 
     fn get_indexes_for_alias(&self) -> Result<Vec<String>> {
-        let mut result = self.do_request(reqwest::Method::Get, "_aliases", None)?;
+        let mut result = self.do_request(Method::Get, "_aliases", None)?;
 
         let json = result.json::<JsValue>()?;
 
@@ -141,11 +142,71 @@ impl<'a> Client<'a> {
 
     fn new_index(&self, index_name: &str) -> Result<()> {
         let json = serde_json::to_string(&mappings())?;
-        self.do_request(reqwest::Method::Put, index_name, Some(&json)).map(|_| ())
+        self.do_request(Method::Put, index_name, Some(&json)).map(|_| ())
+    }
+
+    pub fn multi_search<T, L, S>(&self,
+                                 index_name: &str,
+                                 titles: T,
+                                 languages: L)
+                                 -> Result<HashMap<String, Series>>
+        where T: IntoIterator<Item = S> + Clone,
+              L: IntoIterator<Item = S>,
+              S: AsRef<str>
+    {
+        let fields =
+            languages.into_iter().map(|l| format!("titles.{}", l.as_ref())).collect::<Vec<_>>();
+
+        // TODO: Maybe not clone
+        let mut requests = titles.clone()
+            .into_iter()
+            .map(|title| {
+                let query = json!({
+                    "size": 1,
+                    "query": {
+                        "multi_match": {
+                            "query": title.as_ref(),
+                            "fields": fields
+                        }
+                    }
+                });
+
+                format!("{{}}\n{}", serde_json::to_string(&query).unwrap())
+            })
+            .join("\n");
+
+        requests.push('\n');
+
+        let mut result = self.do_request(Method::Post,
+                        &format!("{}/_msearch", index_name),
+                        Some(&requests))?
+            .json::<JsValue>()?;
+
+        let mut empty_vec = Vec::new();
+        let json = result.get_mut("responses")
+            .and_then(|r| r.as_array_mut())
+            .unwrap_or(&mut empty_vec)
+            .iter_mut()
+            .map(|json| {
+                json.pointer_mut("/hits/hits/0/_source").and_then(|s| {
+                    let source = ::std::mem::replace(s, JsValue::Null);
+                    serde_json::from_value::<Series>(source).ok() // TODO: Use Result
+                })
+            });
+
+        let mut results_map: HashMap<String, Series> = HashMap::new();
+
+        for (query, result) in titles.into_iter().zip(json) {
+            if let Some(series) = result {
+                results_map.insert(query.as_ref().to_string(), series);
+            }
+        }
+
+        Ok(results_map)
     }
 
     fn do_request(&self,
-                  method: reqwest::Method,
+                  method: Method,
                   path: &'a str,
                   body: Option<&'a str>)
                   -> Result<reqwest::Response> {
@@ -197,7 +258,7 @@ fn mappings() -> serde_json::Value {
                 "properties": {
                     "titles": {
                         "properties": {
-                            "x_jat": {
+                            "x-jat": {
                                 "type": "string",
                                 "analyzer": "standard"
                             },

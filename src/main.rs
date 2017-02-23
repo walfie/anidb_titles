@@ -33,11 +33,25 @@ fn main() {
 }
 
 fn run(path: &str, url: &str) -> Result<()> {
-    let titles_iter = titles::TitleIterator::new(path)?;
+    let client = elastic::Client::new(url, "series")?;
 
+    let mut search = client.multi_search("series",
+                      &["Aikatsu", "Kemono Friends", "Aikatsu Stars", "Dragon Maid"],
+                      &["en", "ja", "x-jat"])?;
+
+    for (k, v) in search.drain() {
+        println!("{} {}", k, serde_json::to_string_pretty(&v)?);
+    }
+
+    Ok(())
+}
+
+fn reindex(client: elastic::Client, path: &str) -> Result<()> {
     use std::collections::HashMap;
     use std::collections::hash_map::Entry;
     use titles::Title;
+
+    let titles_iter = titles::TitleIterator::new(path)?;
 
     let mut titles_hash_map: HashMap<u32, Vec<Title>> = HashMap::new();
 
@@ -61,6 +75,5 @@ fn run(path: &str, url: &str) -> Result<()> {
         }
     });
 
-    let client = elastic::Client::new(url, "series")?;
     client.reindex(series)
 }
