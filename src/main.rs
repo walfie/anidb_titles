@@ -35,6 +35,8 @@ fn main() {
 fn run(path: &str, url: &str) -> Result<()> {
     let client = elastic::Client::new(url, "series")?;
 
+    // reindex(&client, path)?;
+
     let mut search = client.multi_search("series",
                       &["Aikatsu", "Kemono Friends", "Aikatsu Stars", "Dragon Maid"],
                       &["en", "ja", "x-jat"])?;
@@ -46,7 +48,7 @@ fn run(path: &str, url: &str) -> Result<()> {
     Ok(())
 }
 
-fn reindex(client: elastic::Client, path: &str) -> Result<()> {
+fn reindex(client: &elastic::Client, path: &str) -> Result<()> {
     use std::collections::HashMap;
     use std::collections::hash_map::Entry;
     use titles::Title;
@@ -75,5 +77,6 @@ fn reindex(client: elastic::Client, path: &str) -> Result<()> {
         }
     });
 
-    client.reindex(series)
+    let chunk_size = 250;
+    client.reindex(series, chunk_size)
 }

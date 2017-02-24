@@ -55,8 +55,8 @@ impl<'a> Client<'a> {
         })
     }
 
-    pub fn reindex<I>(&self, series: I) -> Result<()>
-        where I: Iterator<Item = Series>
+    pub fn reindex<I>(&self, series: I, chunk_size: usize) -> Result<()>
+        where I: IntoIterator<Item = Series>
     {
         let now = time::now_utc();
         let now_str = now.strftime("%Y%m%d_%H%M%S").unwrap();
@@ -69,7 +69,9 @@ impl<'a> Client<'a> {
         self.new_index(&index_name)?;
 
         println!("Bulk insert"); // TODO: Remove
-        self.bulk_insert(&index_name, "series", series, 250)?;
+        for chunk in &series.into_iter().chunks(chunk_size) {
+            self.bulk_insert(&index_name, "series", chunk)?;
+        }
 
         println!("Update alias"); // TODO: Remove
         self.update_alias(index_name, &existing_indexes)
@@ -91,41 +93,30 @@ impl<'a> Client<'a> {
         self.do_request(Method::Post, "_aliases", Some(&json)).map(|_| ())
     }
 
-    fn bulk_insert<I>(&self,
-                      index_name: &str,
-                      type_name: &str,
-                      items: I,
-                      chunk_size: usize)
-                      -> Result<()>
-        where I: Iterator<Item = Series>
+    fn bulk_insert<I>(&self, index_name: &str, type_name: &str, items: I) -> Result<()>
+        where I: IntoIterator<Item = Series>
     {
-        // TODO: Items must be non-empty or this panics.
-        items.chunks(chunk_size)
-            .into_iter()
-            .map(|chunk| {
-                // TODO: Put into separate function, also multithread
-                let mut batch = chunk.flat_map(|series| {
-                        let action = json!({
-                            "index": {
-                                "_index": index_name,
-                                "_type": type_name,
-                                "_id": series.id
-                            }
-                        });
+        let mut body = items.into_iter()
+            .map(|series| {
+                let action = json!({
+                    "index": {
+                        "_index": index_name,
+                        "_type": type_name,
+                        "_id": series.id
+                    }
+                });
 
-                        // TODO: Don't unwrap. Also don't use vec?
-                        vec![
-                            serde_json::to_string(&action).unwrap(),
-                            serde_json::to_string(&series).unwrap()
-                        ]
-                    })
-                    .join("\n");
-
-                batch.push('\n');
-
-                self.do_request(Method::Put, "_bulk", Some(&batch)).map(|_| ())
+                format!(
+                    "{}\n{}",
+                    serde_json::to_string(&action).unwrap(),
+                    serde_json::to_string(&series).unwrap()
+                )
             })
-            .fold_results((), |_, _| ())
+            .join("\n");
+
+        body.push('\n');
+
+        self.do_request(Method::Put, "_bulk", Some(&body)).map(|_| ())
     }
 
     fn get_indexes_for_alias(&self) -> Result<Vec<String>> {
