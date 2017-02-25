@@ -14,11 +14,12 @@ use time;
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Series {
     pub id: u32,
+    pub primary_title: Option<String>,
     pub titles: TitlesByLanguage,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-pub struct TitlesByLanguage(HashMap<String, Vec<String>>);
+pub struct TitlesByLanguage(pub HashMap<String, Vec<String>>);
 
 impl TitlesByLanguage {
     pub fn new(mut titles: Vec<Title>) -> Self {
@@ -38,6 +39,13 @@ impl TitlesByLanguage {
         }
 
         TitlesByLanguage(by_language)
+    }
+
+    // TODO: Use less String cloning
+    pub fn primary_title<T>(&self, language: T) -> Option<String>
+        where T: Into<String>
+    {
+        self.0.get(&language.into()).and_then(|titles| titles.first()).cloned()
     }
 }
 
@@ -222,8 +230,11 @@ impl<'a> Client<'a> {
               L: IntoIterator<Item = S2>,
               S2: AsRef<str>
     {
-        let fields =
+        let mut fields =
             languages.into_iter().map(|l| format!("titles.{}", l.as_ref())).collect::<Vec<_>>();
+
+        // If the query matches primary_title exactly, boost by a lot
+        fields.push("primary_title^10".to_string());
 
         let mut requests = titles.into_iter()
             .map(|title| {
@@ -368,6 +379,10 @@ fn mappings() -> serde_json::Value {
             "series": {
                 "_all": { "enabled": false },
                 "properties": {
+                    "primary_title": {
+                        "type": "string",
+                        "index": "not_analyzed"
+                    },
                     "clubdam": {
                         "properties": {
                             "title": {
