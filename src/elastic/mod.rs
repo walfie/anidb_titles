@@ -308,34 +308,6 @@ impl<'a> Client<'a> {
     }
 }
 
-fn mappings() -> serde_json::Value {
-    json!({
-        "mappings": {
-            "series": {
-                "_all": { "enabled": false },
-                "properties": {
-                    "titles": {
-                        "properties": {
-                            "x-jat": {
-                                "type": "string",
-                                "analyzer": "standard"
-                            },
-                            "ja": {
-                                "type": "string",
-                                "analyzer": "cjk"
-                            },
-                            "en": {
-                                "type": "string",
-                                "analyzer": "english"
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    })
-}
-
 pub struct ScrollSearch<'a> {
     client: &'a Client<'a>,
     query: JsValue,
@@ -388,4 +360,40 @@ impl<'a> Iterator for ScrollSearch<'a> {
             Err(e) => Some(Err(e)),
         }
     }
+}
+
+fn mappings() -> serde_json::Value {
+    json!({
+        "mappings": {
+            "series": {
+                "_all": { "enabled": false },
+                "properties": {
+                    "clubdam": {
+                        "properties": {
+                            "title": {
+                                "type": "string",
+                                "analyzer": "cjk"
+                            }
+                        }
+                    },
+                    "titles": {
+                        "properties": {
+                            "x-jat": {
+                                "type": "string",
+                                "analyzer": "standard"
+                            },
+                            "ja": {
+                                "type": "string",
+                                "analyzer": "cjk"
+                            },
+                            "en": {
+                                "type": "string",
+                                "analyzer": "english"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    })
 }
