@@ -1,5 +1,7 @@
 extern crate anidb_titles as titles;
 extern crate serde_json;
+extern crate clubdarn;
+extern crate itertools;
 
 use titles::elastic;
 use titles::error::*;
@@ -33,16 +35,22 @@ fn main() {
 }
 
 fn run(path: &str, url: &str) -> Result<()> {
-    let client = elastic::Client::new(url, "series")?;
+    let search_client = elastic::Client::new(url, "series")?;
 
-    // reindex(&client, path)?;
+    let darn = clubdarn::Client::default()?;
+    let series = darn.series().by_category(clubdarn::category::series::ANIME).send()?;
 
-    let mut search = client.multi_search("series",
-                      &["Aikatsu", "Kemono Friends", "Aikatsu Stars", "Dragon Maid"],
-                      &["en", "ja", "x-jat"])?;
+    let languages = ["ja"];
 
-    for (k, v) in search.drain() {
-        println!("{} {}", k, serde_json::to_string_pretty(&v)?);
+    use itertools::Itertools;
+    for chunk in series.items.into_iter().chunks(250).into_iter() {
+        let titles = chunk.map(|s| s.title).collect::<Vec<_>>();
+
+        let mut search = search_client.multi_search("series", &titles, &languages)?;
+
+        for (k, v) in titles.iter().zip(search) {
+            println!("{} {}", k, serde_json::to_string_pretty(&v)?);
+        }
     }
 
     Ok(())

@@ -136,21 +136,21 @@ impl<'a> Client<'a> {
         self.do_request(Method::Put, index_name, Some(&json)).map(|_| ())
     }
 
-    pub fn multi_search<T, L, S>(&self,
-                                 index_name: &str,
-                                 titles: T,
-                                 languages: L)
-                                 -> Result<HashMap<String, Series>>
-        where T: IntoIterator<Item = S> + Clone,
-              L: IntoIterator<Item = S>,
-              S: AsRef<str>
+    // TODO: Make this type signature not terrible
+    pub fn multi_search<T, L, S1, S2>(&self,
+                                      index_name: &str,
+                                      titles: T,
+                                      languages: L)
+                                      -> Result<Vec<Option<Series>>>
+        where T: IntoIterator<Item = S1>,
+              S1: AsRef<str>,
+              L: IntoIterator<Item = S2>,
+              S2: AsRef<str>
     {
         let fields =
             languages.into_iter().map(|l| format!("titles.{}", l.as_ref())).collect::<Vec<_>>();
 
-        // TODO: Maybe not clone
-        let mut requests = titles.clone()
-            .into_iter()
+        let mut requests = titles.into_iter()
             .map(|title| {
                 let query = json!({
                     "size": 1,
@@ -174,7 +174,7 @@ impl<'a> Client<'a> {
             .json::<JsValue>()?;
 
         let mut empty_vec = Vec::new();
-        let json = result.get_mut("responses")
+        let series = result.get_mut("responses")
             .and_then(|r| r.as_array_mut())
             .unwrap_or(&mut empty_vec)
             .iter_mut()
@@ -185,15 +185,7 @@ impl<'a> Client<'a> {
                 })
             });
 
-        let mut results_map: HashMap<String, Series> = HashMap::new();
-
-        for (query, result) in titles.into_iter().zip(json) {
-            if let Some(series) = result {
-                results_map.insert(query.as_ref().to_string(), series);
-            }
-        }
-
-        Ok(results_map)
+        Ok(series.collect::<Vec<_>>())
     }
 
     fn do_request(&self,

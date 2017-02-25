@@ -10,6 +10,7 @@ extern crate serde_json;
 extern crate reqwest;
 extern crate time;
 extern crate itertools;
+extern crate clubdarn;
 
 pub mod error;
 use csv::NextField;

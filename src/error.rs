@@ -1,3 +1,4 @@
+use clubdarn;
 use reqwest;
 use serde_json;
 use std;
@@ -30,5 +31,6 @@ error_chain! {
         Io(std::io::Error);
         Http(reqwest::Error);
         Json(serde_json::Error);
+        ClubDarn(clubdarn::Error);
     }
 }
