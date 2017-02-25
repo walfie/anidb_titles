@@ -1,14 +1,14 @@
-extern crate anidb_titles as titles;
+extern crate clubdam_anidb_indexer as indexer;
 extern crate serde_json;
 extern crate clubdarn;
 extern crate itertools;
 
+use indexer::Title;
+use indexer::elastic;
+use indexer::error::*;
 use itertools::Itertools;
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
-use titles::Title;
-use titles::elastic;
-use titles::error::*;
 
 fn main() {
     let mut args = std::env::args().skip(1);
@@ -94,7 +94,7 @@ fn run(path: &str, url: &str) -> Result<()> {
 }
 
 fn reindex(client: &elastic::Client, path: &str) -> Result<Vec<String>> {
-    let titles_iter = titles::TitleIterator::new(path)?;
+    let titles_iter = indexer::TitleIterator::new(path)?;
 
     let mut titles_hash_map: HashMap<u32, Vec<Title>> = HashMap::new();
 
