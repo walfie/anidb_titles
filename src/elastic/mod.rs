@@ -58,14 +58,14 @@ impl<'a> Client<'a> {
         })
     }
 
-    pub fn reindex<I>(&self, series: I, chunk_size: usize, should_wait: bool) -> Result<()>
+    pub fn reindex<I>(&self, series: I, chunk_size: usize, should_wait: bool) -> Result<Vec<String>>
         where I: IntoIterator<Item = Series>
     {
         let now = time::now_utc();
         let now_str = now.strftime("%Y%m%d_%H%M%S").unwrap();
         let index_name = format!("{}_{}", self.alias, now_str);
 
-        println!("Getting indexes"); // TODO: Remove
+        println!("Getting indices"); // TODO: Remove
         let existing_indexes = self.get_indexes_for_alias()?;
 
         println!("New index"); // TODO: Remove
@@ -77,7 +77,9 @@ impl<'a> Client<'a> {
         }
 
         println!("Update alias"); // TODO: Remove
-        self.update_alias(index_name, &existing_indexes)
+        self.update_alias(index_name, &existing_indexes)?;
+
+        Ok(existing_indexes)
     }
 
     fn update_alias<T>(&self, new_index: T, old_indexes: &[T]) -> Result<()>
@@ -94,6 +96,14 @@ impl<'a> Client<'a> {
 
         let json = serde_json::to_string(&body)?;
         self.do_request(Method::Post, "_aliases", Some(&json)).map(|_| ())
+    }
+
+    pub fn delete_indices<T>(&self, indices: &[T]) -> Result<()>
+        where T: AsRef<str>
+    {
+        indices.iter()
+            .map(|index| self.do_request(Method::Delete, index.as_ref(), None))
+            .fold_results((), |_, _| ())
     }
 
     fn bulk_insert<I>(&self, index_name: &str, items: I, should_wait: bool) -> Result<()>
@@ -122,7 +132,8 @@ impl<'a> Client<'a> {
     }
 
     pub fn delete_non_clubdam(&self) -> Result<()> {
-        let body = json!({
+        let page_size = 500;
+        let query = json!({
             "query": {
                 "bool": {
                     "must_not": {
@@ -131,14 +142,34 @@ impl<'a> Client<'a> {
                         }
                     }
                 }
-            }
+            },
+            "sort": ["_doc"],
+            "fields": [],
+            "size": page_size
         });
-        let body = serde_json::to_string(&body).unwrap();
 
-        self.do_request(Method::Post,
-                        &format!("{}/_delete_by_query", self.alias),
-                        Some(&body))
-            .map(|_| ())
+        let ids_iter = ScrollSearch {
+            client: self,
+            query: query,
+            scroll_id: None,
+        };
+
+        ids_iter.map(|ids| {
+                let mut body = ids?
+                        .into_iter()
+                        .map(|id| {
+                            let delete = json!({"delete": { "_id": id }});
+                            serde_json::to_string(&delete).unwrap()
+                        })
+                        .join("\n");
+
+                body.push('\n');
+
+                self.do_request(Method::Put,
+                                &format!("{}/{}/_bulk", self.alias, self.type_name),
+                                Some(&body))
+            })
+            .fold_results((), |_, _| ())
     }
 
     pub fn bulk_update<I>(&self, items: I, should_wait: bool) -> Result<()>
@@ -147,7 +178,7 @@ impl<'a> Client<'a> {
         let mut body = items.into_iter()
             .map(|(id, series)| {
                 let action = json!({ "update": { "_id": id } });
-                let doc = json!({ "doc": { "titles": { "clubdam": [ series.title ] } } });
+                let doc = json!({ "doc": { "clubdam": series } });
 
                 format!(
                     "{}\n{}",
@@ -303,4 +334,58 @@ fn mappings() -> serde_json::Value {
             }
         }
     })
+}
+
+pub struct ScrollSearch<'a> {
+    client: &'a Client<'a>,
+    query: JsValue,
+    scroll_id: Option<String>,
+}
+
+impl<'a> Iterator for ScrollSearch<'a> {
+    type Item = Result<Vec<String>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut get_response = || {
+            let mut response = if let Some(ref scroll) = self.scroll_id {
+                    let q = json!({ "scroll": "1m", "scroll_id": scroll });
+                    let body = serde_json::to_string(&q)?;
+
+                    self.client.do_request(Method::Post, "_search/scroll", Some(&body))
+                } else {
+                    let body = serde_json::to_string(&self.query)?;
+
+                    self.client.do_request(Method::Post,
+                                           &format!("{}/_search?scroll=1m", self.client.alias),
+                                           Some(&body))
+                }?
+                .json::<JsValue>()?;
+
+            let mut empty_vec = Vec::new();
+
+            self.scroll_id =
+                response.get("_scroll_id").and_then(|id| id.as_str()).map(|id| id.to_string());
+
+            let hits = response.pointer_mut("/hits/hits")
+                .and_then(|r| r.as_array_mut())
+                .unwrap_or(&mut empty_vec);
+
+            if hits.is_empty() {
+                Ok(None)
+            } else {
+                let ids_str = hits.into_iter()
+                    .flat_map(|hit| {
+                        hit.get("_id").and_then(|id| id.as_str()).map(|id| id.to_string())
+                    })
+                    .collect::<Vec<String>>();
+                Ok(Some(ids_str))
+            }
+        };
+
+        match get_response() {
+            Ok(Some(resp)) => Some(Ok(resp)),
+            Ok(None) => None,
+            Err(e) => Some(Err(e)),
+        }
+    }
 }

@@ -37,12 +37,17 @@ fn main() {
 fn run(path: &str, url: &str) -> Result<()> {
     let search_client = elastic::Client::new(url, "series", "series")?;
 
-    //reindex(&search_client, path)?;
+    println!("Reindexing anidb titles to Elasticsearch");
+    let old_indices = reindex(&search_client, path)?;
 
     let darn = clubdarn::Client::default()?;
+
+    println!("Getting series from ClubDAM");
     let series = darn.series().by_category(clubdarn::category::series::ANIME).send()?;
 
     let languages = ["ja"];
+
+    println!("Searching for ClubDAM series names in Elasticsearch");
 
     use itertools::Itertools;
     for chunk in &series.items.into_iter().chunks(500) {
@@ -59,10 +64,16 @@ fn run(path: &str, url: &str) -> Result<()> {
         search_client.bulk_update(docs, true)?;
     }
 
-    search_client.delete_non_clubdam()
+    println!("Deleting non-ClubDAM documents");
+
+    search_client.delete_non_clubdam()?;
+
+    println!("Deleting old Elasticsearch indices");
+
+    search_client.delete_indices(&old_indices)
 }
 
-fn reindex(client: &elastic::Client, path: &str) -> Result<()> {
+fn reindex(client: &elastic::Client, path: &str) -> Result<Vec<String>> {
     use std::collections::HashMap;
     use std::collections::hash_map::Entry;
     use titles::Title;
