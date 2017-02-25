@@ -35,7 +35,9 @@ fn main() {
 }
 
 fn run(path: &str, url: &str) -> Result<()> {
-    let search_client = elastic::Client::new(url, "series")?;
+    let search_client = elastic::Client::new(url, "series", "series")?;
+
+    //reindex(&search_client, path)?;
 
     let darn = clubdarn::Client::default()?;
     let series = darn.series().by_category(clubdarn::category::series::ANIME).send()?;
@@ -43,17 +45,21 @@ fn run(path: &str, url: &str) -> Result<()> {
     let languages = ["ja"];
 
     use itertools::Itertools;
-    for chunk in series.items.into_iter().chunks(250).into_iter() {
-        let titles = chunk.map(|s| s.title).collect::<Vec<_>>();
+    for chunk in &series.items.into_iter().chunks(500) {
+        let series_batch = chunk.collect::<Vec<clubdarn::Series>>();
+        let titles = series_batch.iter().map(|s| s.title.clone()).collect::<Vec<String>>();
 
-        let mut search = search_client.multi_search("series", &titles, &languages)?;
+        let search_results = search_client.multi_search(&titles, &languages)?;
 
-        for (k, v) in titles.iter().zip(search) {
-            println!("{} {}", k, serde_json::to_string_pretty(&v)?);
-        }
+        let zipped = series_batch.into_iter().zip(search_results);
+        let docs = zipped.flat_map(|(clubdarn_series, anidb_series)| {
+            anidb_series.map(|s| (s.id, clubdarn_series))
+        });
+
+        search_client.bulk_update(docs, true)?;
     }
 
-    Ok(())
+    search_client.delete_non_clubdam()
 }
 
 fn reindex(client: &elastic::Client, path: &str) -> Result<()> {
@@ -85,6 +91,7 @@ fn reindex(client: &elastic::Client, path: &str) -> Result<()> {
         }
     });
 
-    let chunk_size = 250;
-    client.reindex(series, chunk_size)
+    let chunk_size = 1000;
+    let should_wait = true;
+    client.reindex(series, chunk_size, should_wait)
 }

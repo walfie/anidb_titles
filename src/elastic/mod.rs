@@ -1,4 +1,5 @@
 use Title;
+use clubdarn;
 use error::*;
 use itertools::Itertools;
 use reqwest;
@@ -44,18 +45,20 @@ pub struct Client<'a> {
     http: reqwest::Client,
     base_url: &'a str,
     alias: &'a str,
+    type_name: &'a str,
 }
 
 impl<'a> Client<'a> {
-    pub fn new(base_url: &'a str, alias: &'a str) -> Result<Self> {
+    pub fn new(base_url: &'a str, alias: &'a str, type_name: &'a str) -> Result<Self> {
         Ok(Client {
             http: reqwest::Client::new()?,
             base_url: base_url,
             alias: alias,
+            type_name: type_name,
         })
     }
 
-    pub fn reindex<I>(&self, series: I, chunk_size: usize) -> Result<()>
+    pub fn reindex<I>(&self, series: I, chunk_size: usize, should_wait: bool) -> Result<()>
         where I: IntoIterator<Item = Series>
     {
         let now = time::now_utc();
@@ -70,7 +73,7 @@ impl<'a> Client<'a> {
 
         println!("Bulk insert"); // TODO: Remove
         for chunk in &series.into_iter().chunks(chunk_size) {
-            self.bulk_insert(&index_name, "series", chunk)?;
+            self.bulk_insert(&index_name, chunk, should_wait)?;
         }
 
         println!("Update alias"); // TODO: Remove
@@ -93,18 +96,12 @@ impl<'a> Client<'a> {
         self.do_request(Method::Post, "_aliases", Some(&json)).map(|_| ())
     }
 
-    fn bulk_insert<I>(&self, index_name: &str, type_name: &str, items: I) -> Result<()>
+    fn bulk_insert<I>(&self, index_name: &str, items: I, should_wait: bool) -> Result<()>
         where I: IntoIterator<Item = Series>
     {
         let mut body = items.into_iter()
             .map(|series| {
-                let action = json!({
-                    "index": {
-                        "_index": index_name,
-                        "_type": type_name,
-                        "_id": series.id
-                    }
-                });
+                let action = json!({ "index": { "_id": series.id } });
 
                 format!(
                     "{}\n{}",
@@ -116,7 +113,58 @@ impl<'a> Client<'a> {
 
         body.push('\n');
 
-        self.do_request(Method::Put, "_bulk", Some(&body)).map(|_| ())
+        let wait_for = if should_wait { "?refresh=wait_for" } else { "" };
+
+        self.do_request(Method::Put,
+                        &format!("{}/{}/_bulk{}", index_name, self.type_name, wait_for),
+                        Some(&body))
+            .map(|_| ())
+    }
+
+    pub fn delete_non_clubdam(&self) -> Result<()> {
+        let body = json!({
+            "query": {
+                "bool": {
+                    "must_not": {
+                        "exists": {
+                            "field": "clubdam"
+                        }
+                    }
+                }
+            }
+        });
+        let body = serde_json::to_string(&body).unwrap();
+
+        self.do_request(Method::Post,
+                        &format!("{}/_delete_by_query", self.alias),
+                        Some(&body))
+            .map(|_| ())
+    }
+
+    pub fn bulk_update<I>(&self, items: I, should_wait: bool) -> Result<()>
+        where I: IntoIterator<Item = (u32, clubdarn::Series)>
+    {
+        let mut body = items.into_iter()
+            .map(|(id, series)| {
+                let action = json!({ "update": { "_id": id } });
+                let doc = json!({ "doc": { "titles": { "clubdam": [ series.title ] } } });
+
+                format!(
+                    "{}\n{}",
+                    serde_json::to_string(&action).unwrap(),
+                    serde_json::to_string(&doc).unwrap()
+                )
+            })
+            .join("\n");
+
+        body.push('\n');
+
+        let wait_for = if should_wait { "?refresh=wait_for" } else { "" };
+
+        self.do_request(Method::Put,
+                        &format!("{}/{}/_bulk{}", self.alias, self.type_name, wait_for),
+                        Some(&body))
+            .map(|_| ())
     }
 
     fn get_indexes_for_alias(&self) -> Result<Vec<String>> {
@@ -137,11 +185,7 @@ impl<'a> Client<'a> {
     }
 
     // TODO: Make this type signature not terrible
-    pub fn multi_search<T, L, S1, S2>(&self,
-                                      index_name: &str,
-                                      titles: T,
-                                      languages: L)
-                                      -> Result<Vec<Option<Series>>>
+    pub fn multi_search<T, L, S1, S2>(&self, titles: T, languages: L) -> Result<Vec<Option<Series>>>
         where T: IntoIterator<Item = S1>,
               S1: AsRef<str>,
               L: IntoIterator<Item = S2>,
@@ -169,7 +213,7 @@ impl<'a> Client<'a> {
         requests.push('\n');
 
         let mut result = self.do_request(Method::Post,
-                        &format!("{}/_msearch", index_name),
+                        &format!("{}/_msearch", self.alias),
                         Some(&requests))?
             .json::<JsValue>()?;
 
