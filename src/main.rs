@@ -47,7 +47,7 @@ fn run(path: &str, url: &str) -> Result<()> {
 
     let languages = ["ja"];
 
-    println!("Searching for ClubDAM series names in Elasticsearch and indexing");
+    println!("Searching for ClubDAM series names in Elasticsearch");
 
     use itertools::Itertools;
     for chunk in &series.items.into_iter().chunks(500) {
@@ -96,13 +96,9 @@ fn reindex(client: &elastic::Client, path: &str) -> Result<Vec<String>> {
     }
 
     let series = titles_hash_map.drain().map(|(id, titles)| {
-        let titles_by_language = elastic::TitlesByLanguage::new(titles);
-        let primary_title = titles_by_language.primary_title("ja");
-
         elastic::Series {
             id: id,
-            primary_title: primary_title,
-            titles: titles_by_language,
+            titles: elastic::TitlesByLanguage::new(titles),
         }
     });
 
