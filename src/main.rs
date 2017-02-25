@@ -3,6 +3,10 @@ extern crate serde_json;
 extern crate clubdarn;
 extern crate itertools;
 
+use itertools::Itertools;
+use std::collections::HashMap;
+use std::collections::hash_map::Entry;
+use titles::Title;
 use titles::elastic;
 use titles::error::*;
 
@@ -49,24 +53,40 @@ fn run(path: &str, url: &str) -> Result<()> {
 
     println!("Searching for ClubDAM series names in Elasticsearch");
 
-    use itertools::Itertools;
-    for chunk in &series.items.into_iter().chunks(500) {
+    let batch_size = 500;
+
+    let mut clubdam_map: HashMap<u32, Vec<String>> = HashMap::new();
+
+    for chunk in &series.items.into_iter().chunks(batch_size) {
         let series_batch = chunk.collect::<Vec<clubdarn::Series>>();
         let titles = series_batch.iter().map(|s| s.title.clone()).collect::<Vec<String>>();
 
         let search_results = search_client.multi_search(&titles, &languages)?;
 
-        let zipped = series_batch.into_iter().zip(search_results);
-        let docs = zipped.flat_map(|(clubdarn_series, anidb_series)| {
-            anidb_series.map(|s| (s.id, clubdarn_series))
-        });
+        let zipped = series_batch.into_iter()
+            .zip(search_results)
+            .filter_map(|(clubdarn, anidb_opt)| anidb_opt.map(|anidb| (clubdarn, anidb)));
 
-        search_client.bulk_update(docs, true)?;
+        for (clubdarn_series, anidb_series) in zipped {
+            match clubdam_map.entry(anidb_series.id) {
+                Entry::Occupied(mut o) => {
+                    o.get_mut().push(clubdarn_series.title);
+                }
+                Entry::Vacant(v) => {
+                    v.insert(vec![clubdarn_series.title]);
+                }
+            };
+        }
+    }
+
+    println!("Updating Elasticsearch with ClubDAM titles");
+    for chunk in &clubdam_map.drain().chunks(batch_size) {
+        search_client.bulk_update(chunk, true)?;
     }
 
     println!("Deleting non-ClubDAM documents");
 
-    search_client.delete_non_clubdam()?;
+    search_client.delete_non_clubdam(batch_size)?;
 
     println!("Deleting old Elasticsearch indices");
 
@@ -74,10 +94,6 @@ fn run(path: &str, url: &str) -> Result<()> {
 }
 
 fn reindex(client: &elastic::Client, path: &str) -> Result<Vec<String>> {
-    use std::collections::HashMap;
-    use std::collections::hash_map::Entry;
-    use titles::Title;
-
     let titles_iter = titles::TitleIterator::new(path)?;
 
     let mut titles_hash_map: HashMap<u32, Vec<Title>> = HashMap::new();

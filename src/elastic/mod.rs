@@ -1,5 +1,4 @@
 use Title;
-use clubdarn;
 use error::*;
 use itertools::Itertools;
 use reqwest;
@@ -131,21 +130,20 @@ impl<'a> Client<'a> {
             .map(|_| ())
     }
 
-    pub fn delete_non_clubdam(&self) -> Result<()> {
-        let page_size = 500;
+    pub fn delete_non_clubdam(&self, batch_size: usize) -> Result<()> {
         let query = json!({
             "query": {
                 "bool": {
                     "must_not": {
                         "exists": {
-                            "field": "clubdam"
+                            "field": "titles.clubdam"
                         }
                     }
                 }
             },
             "sort": ["_doc"],
             "fields": [],
-            "size": page_size
+            "size": batch_size
         });
 
         let ids_iter = ScrollSearch {
@@ -173,12 +171,18 @@ impl<'a> Client<'a> {
     }
 
     pub fn bulk_update<I>(&self, items: I, should_wait: bool) -> Result<()>
-        where I: IntoIterator<Item = (u32, clubdarn::Series)>
+        where I: IntoIterator<Item = (u32, Vec<String>)>
     {
         let mut body = items.into_iter()
-            .map(|(id, series)| {
+            .map(|(id, titles)| {
                 let action = json!({ "update": { "_id": id } });
-                let doc = json!({ "doc": { "clubdam": series } });
+                let doc = json!({
+                    "doc": {
+                        "titles": {
+                            "clubdam": titles
+                        }
+                    }
+                });
 
                 format!(
                     "{}\n{}",
@@ -368,14 +372,6 @@ fn mappings() -> serde_json::Value {
             "series": {
                 "_all": { "enabled": false },
                 "properties": {
-                    "clubdam": {
-                        "properties": {
-                            "title": {
-                                "type": "string",
-                                "analyzer": "cjk"
-                            }
-                        }
-                    },
                     "titles": {
                         "properties": {
                             "x-jat": {
@@ -389,6 +385,10 @@ fn mappings() -> serde_json::Value {
                             "en": {
                                 "type": "string",
                                 "analyzer": "english"
+                            },
+                            "clubdam": {
+                                "type": "string",
+                                "analyzer": "cjk"
                             }
                         }
                     }
