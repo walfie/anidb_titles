@@ -378,6 +378,18 @@ impl<'a> Iterator for ScrollSearch<'a> {
 
 fn mappings() -> serde_json::Value {
     json!({
+        "settings": {
+            "analysis": {
+                "analyzer": {
+                    "romaji": {
+                        "type": "custom",
+                        "tokenizer": "standard",
+                        "char_filter": [],
+                        "filter": ["word_delimiter", "lowercase"]
+                    }
+                }
+            }
+        },
         "mappings": {
             "series": {
                 "_all": { "enabled": false },
@@ -390,7 +402,7 @@ fn mappings() -> serde_json::Value {
                         "properties": {
                             "x-jat": {
                                 "type": "string",
-                                "analyzer": "standard"
+                                "analyzer": "romaji"
                             },
                             "ja": {
                                 "type": "string",
