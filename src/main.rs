@@ -41,13 +41,16 @@ fn main() {
 fn run(path: &str, url: &str) -> Result<()> {
     let search_client = elastic::Client::new(url, "series", "series")?;
 
-    println!("Reindexing anidb titles to Elasticsearch");
-    let old_indices = reindex(&search_client, path)?;
-
     let darn = clubdarn::Client::default()?;
 
     println!("Getting series from ClubDAM");
-    let series = darn.series().by_category(clubdarn::category::series::ANIME).send()?;
+    let series = darn.series()
+        .by_category(clubdarn::category::series::ANIME)
+        .send()
+        .chain_err(|| "failed to get series from ClubDAM (maybe it's down?)")?;
+
+    println!("Reindexing AniDB titles to Elasticsearch");
+    let old_indices = reindex(&search_client, path)?;
 
     let languages = ["ja"];
 
@@ -112,9 +115,12 @@ fn reindex(client: &elastic::Client, path: &str) -> Result<Vec<String>> {
     }
 
     let series = titles_hash_map.drain().map(|(id, titles)| {
+        let titles_by_language = elastic::TitlesByLanguage::new(titles);
+        let main_title = titles_by_language.main_title("ja");
         elastic::Series {
             id: id,
-            titles: elastic::TitlesByLanguage::new(titles),
+            main_title: main_title,
+            titles: titles_by_language,
         }
     });
 

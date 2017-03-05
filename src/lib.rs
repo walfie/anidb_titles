@@ -61,7 +61,7 @@ impl TitleIterator {
         where P: AsRef<Path>
     {
         let file = File::open(file_path)?;
-        let mut reader = BufReader::new(file);
+        let mut reader = BufReader::with_capacity(1, file);
 
         // Ignore first 3 lines, which are comments
         {
@@ -70,7 +70,7 @@ impl TitleIterator {
                 let _ = reader.read_line(&mut s);
             }
         }
-        let line_num: u32 = 4;
+        let line_num: u32 = 3;
 
         let csv_reader = csv::Reader::from_reader(reader.into_inner())
             .delimiter(b'|')

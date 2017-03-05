@@ -13,6 +13,7 @@ use time;
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Series {
     pub id: u32,
+    pub main_title: Option<String>,
     pub titles: TitlesByLanguage,
 }
 
@@ -37,6 +38,12 @@ impl TitlesByLanguage {
         }
 
         TitlesByLanguage(by_language)
+    }
+
+    pub fn main_title<S>(&self, language: S) -> Option<String>
+        where S: Into<String>
+    {
+        self.0.get(&language.into()).and_then(|titles| titles.first()).cloned()
     }
 }
 
@@ -226,8 +233,11 @@ impl<'a> Client<'a> {
               L: IntoIterator<Item = S2>,
               S2: AsRef<str>
     {
-        let fields =
+        let mut fields =
             languages.into_iter().map(|l| format!("titles.{}", l.as_ref())).collect::<Vec<_>>();
+
+        // Prioritize exact matches
+        fields.push("main_title^10".to_string());
 
         let mut requests = titles.into_iter()
             .map(|title| {
@@ -372,6 +382,10 @@ fn mappings() -> serde_json::Value {
             "series": {
                 "_all": { "enabled": false },
                 "properties": {
+                    "main_title": {
+                        "type": "string",
+                        "index": "not_analyzed"
+                    },
                     "titles": {
                         "properties": {
                             "x-jat": {
