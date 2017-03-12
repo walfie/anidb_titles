@@ -55,7 +55,8 @@ fn run(path: &str, url: &str) -> Result<()> {
 
     let languages = ["ja"];
 
-    println!("Searching for ClubDAM series names in Elasticsearch");
+    println!("Searching Elasticsearch for ClubDAM series names ({})",
+             series.items.len());
 
     let batch_size = 500;
 
@@ -101,12 +102,14 @@ fn run(path: &str, url: &str) -> Result<()> {
         }
     }
 
-    println!("Updating existing Elasticsearch documents to include ClubDAM titles");
+    println!("Updating existing Elasticsearch documents to include ClubDAM titles ({})",
+             anidb_id_to_clubdam_titles.len());
     for chunk in &anidb_id_to_clubdam_titles.drain().chunks(batch_size) {
         search_client.bulk_update(chunk, true)?;
     }
 
-    println!("Updating Elasticsearch with unmatched ClubDAM titles");
+    println!("Updating Elasticsearch with unmatched ClubDAM titles ({})",
+             clubdam_titles_not_in_anidb.len());
     for chunk in &clubdam_titles_not_in_anidb.into_iter().chunks(batch_size) {
         search_client.bulk_insert(alias, chunk, true)?;
     }
@@ -115,7 +118,7 @@ fn run(path: &str, url: &str) -> Result<()> {
 
     search_client.delete_non_clubdam(batch_size)?;
 
-    println!("Deleting old Elasticsearch indices");
+    println!("Deleting old Elasticsearch indices {:?}", old_indices);
 
     search_client.delete_indices(&old_indices)
 }
