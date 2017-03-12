@@ -12,13 +12,13 @@ use time;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Series {
-    pub id: u32,
+    pub id: String,
     pub main_title: Option<String>,
     pub titles: TitlesByLanguage,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-pub struct TitlesByLanguage(HashMap<String, Vec<String>>);
+pub struct TitlesByLanguage(pub HashMap<String, Vec<String>>);
 
 impl TitlesByLanguage {
     pub fn new(mut titles: Vec<Title>) -> Self {
@@ -71,18 +71,21 @@ impl<'a> Client<'a> {
         let now_str = now.strftime("%Y%m%d_%H%M%S").unwrap();
         let index_name = format!("{}_{}", self.alias, now_str);
 
-        println!("Getting indices"); // TODO: Remove
+        println!("Getting indices for alias \"{}\"", self.alias);
         let existing_indexes = self.get_indexes_for_alias()?;
 
-        println!("New index"); // TODO: Remove
+        println!("Creating new index \"{}\"", index_name);
         self.new_index(&index_name)?;
 
-        println!("Bulk insert"); // TODO: Remove
+        println!("Bulk inserting documents");
         for chunk in &series.into_iter().chunks(chunk_size) {
             self.bulk_insert(&index_name, chunk, should_wait)?;
         }
 
-        println!("Update alias"); // TODO: Remove
+        println!("Updating alias \"{}\" to point to \"{}\", and removing old aliases {:?}",
+                 self.alias,
+                 index_name,
+                 existing_indexes);
         self.update_alias(index_name, &existing_indexes)?;
 
         Ok(existing_indexes)
@@ -112,7 +115,7 @@ impl<'a> Client<'a> {
             .fold_results((), |_, _| ())
     }
 
-    fn bulk_insert<I>(&self, index_name: &str, items: I, should_wait: bool) -> Result<()>
+    pub fn bulk_insert<I>(&self, index_name: &str, items: I, should_wait: bool) -> Result<()>
         where I: IntoIterator<Item = Series>
     {
         let mut body = items.into_iter()
@@ -178,7 +181,7 @@ impl<'a> Client<'a> {
     }
 
     pub fn bulk_update<I>(&self, items: I, should_wait: bool) -> Result<()>
-        where I: IntoIterator<Item = (u32, Vec<String>)>
+        where I: IntoIterator<Item = (String, Vec<String>)>
     {
         let mut body = items.into_iter()
             .map(|(id, titles)| {

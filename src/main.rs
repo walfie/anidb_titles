@@ -39,7 +39,8 @@ fn main() {
 }
 
 fn run(path: &str, url: &str) -> Result<()> {
-    let search_client = elastic::Client::new(url, "series", "series")?;
+    let alias = "series";
+    let search_client = elastic::Client::new(url, alias, "series")?;
 
     let darn = clubdarn::Client::default()?;
 
@@ -58,7 +59,8 @@ fn run(path: &str, url: &str) -> Result<()> {
 
     let batch_size = 500;
 
-    let mut clubdam_map: HashMap<u32, Vec<String>> = HashMap::new();
+    let mut anidb_id_to_clubdam_titles: HashMap<String, Vec<String>> = HashMap::new();
+    let mut clubdam_titles_not_in_anidb: Vec<elastic::Series> = Vec::new();
 
     for chunk in &series.items.into_iter().chunks(batch_size) {
         let series_batch = chunk.collect::<Vec<clubdarn::Series>>();
@@ -66,25 +68,47 @@ fn run(path: &str, url: &str) -> Result<()> {
 
         let search_results = search_client.multi_search(&titles, &languages)?;
 
-        let zipped = series_batch.into_iter()
-            .zip(search_results)
-            .filter_map(|(clubdarn, anidb_opt)| anidb_opt.map(|anidb| (clubdarn, anidb)));
+        let zipped = series_batch.into_iter().zip(search_results);
 
-        for (clubdarn_series, anidb_series) in zipped {
-            match clubdam_map.entry(anidb_series.id) {
-                Entry::Occupied(mut o) => {
-                    o.get_mut().push(clubdarn_series.title);
-                }
-                Entry::Vacant(v) => {
-                    v.insert(vec![clubdarn_series.title]);
-                }
-            };
+        for (clubdarn_series, anidb_series_opt) in zipped {
+            if let Some(anidb_series) = anidb_series_opt {
+                // Series exists in ClubDAM and AniDB, we should update the
+                // indexed docs to include the ClubDAM title
+                match anidb_id_to_clubdam_titles.entry(anidb_series.id.to_string()) {
+                    Entry::Occupied(mut o) => {
+                        o.get_mut().push(clubdarn_series.title);
+                    }
+                    Entry::Vacant(v) => {
+                        v.insert(vec![clubdarn_series.title]);
+                    }
+                };
+            } else {
+                // Series exists in ClubDAM but not AniDB, we should insert
+                // the ClubDAM titles into Elasticsearch
+                let mut titles_map = HashMap::with_capacity(1);
+                let mut titles_vec: Vec<String> = Vec::with_capacity(1);
+                titles_vec.push(clubdarn_series.title.clone());
+                titles_map.insert("clubdam".to_string(), titles_vec);
+
+                let series = elastic::Series {
+                    id: clubdarn_series.title.clone(),
+                    main_title: Some(clubdarn_series.title),
+                    titles: elastic::TitlesByLanguage(titles_map),
+                };
+
+                clubdam_titles_not_in_anidb.push(series);
+            }
         }
     }
 
-    println!("Updating Elasticsearch with ClubDAM titles");
-    for chunk in &clubdam_map.drain().chunks(batch_size) {
+    println!("Updating existing Elasticsearch documents to include ClubDAM titles");
+    for chunk in &anidb_id_to_clubdam_titles.drain().chunks(batch_size) {
         search_client.bulk_update(chunk, true)?;
+    }
+
+    println!("Updating Elasticsearch with unmatched ClubDAM titles");
+    for chunk in &clubdam_titles_not_in_anidb.into_iter().chunks(batch_size) {
+        search_client.bulk_insert(alias, chunk, true)?;
     }
 
     println!("Deleting non-ClubDAM documents");
@@ -118,7 +142,7 @@ fn reindex(client: &elastic::Client, path: &str) -> Result<Vec<String>> {
         let titles_by_language = elastic::TitlesByLanguage::new(titles);
         let main_title = titles_by_language.main_title("ja");
         elastic::Series {
-            id: id,
+            id: id.to_string(),
             main_title: main_title,
             titles: titles_by_language,
         }
