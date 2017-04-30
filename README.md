@@ -17,7 +17,7 @@ This tool works as follows:
    ```json
    {
      "_id": "9348",
-     "main_title": "アイカツ! アイドルカツドウ!"
+     "main_title": "アイカツ! アイドルカツドウ!",
      "titles": {
        "x-jat":["Aikatsu! Idol Katsudou!"],
        "en":["Aikatsu! Idol Activities!"],
@@ -39,7 +39,7 @@ This tool works as follows:
    ```diff
     {
       "_id": "9348",
-      "main_title": "アイカツ! アイドルカツドウ!"
+      "main_title": "アイカツ! アイドルカツドウ!",
       "titles": {
         "x-jat":["Aikatsu! Idol Katsudou!"],
         "en":["Aikatsu! Idol Activities!"],
